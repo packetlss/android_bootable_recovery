@@ -49,6 +49,9 @@ void mtd_read_close(MtdReadContext *);
 MtdWriteContext *mtd_write_partition(const MtdPartition *);
 ssize_t mtd_write_data(MtdWriteContext *, const char *data, size_t data_len);
 off_t mtd_erase_blocks(MtdWriteContext *, int blocks);  /* 0 ok, -1 for all */
+off_t mtd_find_write_start(MtdWriteContext *ctx, off_t pos);
 int mtd_write_close(MtdWriteContext *);
+
+ssize_t mtd_read_raw(MtdReadContext *ctx, char *data, size_t len);
 
 #endif  // MTDUTILS_H_

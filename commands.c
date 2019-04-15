@@ -39,6 +39,8 @@
 #include "minzip/Zip.h"
 #include "roots.h"
 
+#include "extendedcommands.h"
+
 static int gDidShowProgress = 0;
 
 #define UNUSED(p)   ((void)(p))
@@ -106,6 +108,10 @@ cmd_assert(const char *name, void *cookie, int argc, const char *argv[],
     UNUSED(cookie);
     CHECK_BOOL();
     NO_PERMS(permissions);
+
+    if (!script_assert_enabled) {
+      return 0;
+    }
 
     /* If our argument is false, return non-zero (failure)
      * If our argument is true, return zero (success)
@@ -391,7 +397,7 @@ cmd_run_program(const char *name, void *cookie, int argc, const char *argv[],
 
     int status;
     waitpid(pid, &status, 0);
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 || !script_assert_enabled) {
         return 0;
     } else {
         LOGE("Error in %s\n(Status %d)\n", path, status);
@@ -752,6 +758,98 @@ cmd_done(const char *name, void *cookie, int argc, const char *argv[],
     return -1;
 }
 
+
+static int
+cmd_backup_rom(const char *name, void *cookie, int argc, const char *argv[],
+        PermissionRequestList *permissions)
+{
+    UNUSED(cookie);
+    CHECK_WORDS();
+
+    char* backup_name = NULL;
+    switch(argc)
+    {
+        case 0:
+            break;
+        case 1:
+            backup_name = argv[0];
+            break;
+        default:
+            LOGE("Command %s requires zero or one argument\n", name);
+            return 1;
+    }
+
+    return do_nandroid_backup(backup_name);
+}
+
+static int
+cmd_restore_rom(const char *name, void *cookie, int argc, const char *argv[],
+        PermissionRequestList *permissions)
+{
+    UNUSED(cookie);
+    CHECK_WORDS();
+
+    if (argc != 1) {
+        LOGE("Command %s requires exactly one argument\n", name);
+        return 1;
+    }
+
+    return do_nandroid_restore(argv[0]);
+}
+
+static int
+cmd_sleep(const char *name, void *cookie, int argc, const char *argv[],
+            PermissionRequestList *permissions)
+{
+    UNUSED(cookie);
+    CHECK_WORDS();
+
+    if (argc != 1) {
+        LOGE("Command %s requires exactly one argument\n", name);
+        return 1;
+    }
+    
+    int seconds = atoi(argv[0]);
+    sleep(seconds);
+
+    return 0;
+}
+
+static int
+cmd_print(const char *name, void *cookie, int argc, const char *argv[],
+            PermissionRequestList *permissions)
+{
+    UNUSED(cookie);
+    CHECK_WORDS();
+    
+    char message[1024];
+    message[0] = NULL;
+    int i;
+    for (i = 0; i < argc; i++)
+    {
+        strcat(message, argv[i]);
+        strcat(message, " ");
+    }
+    strcat(message, "\n");
+    
+    ui_print(message);
+    return 0;
+}
+
+static int
+cmd_install_zip(const char *name, void *cookie, int argc, const char *argv[],
+            PermissionRequestList *permissions)
+{
+    UNUSED(cookie);
+    CHECK_WORDS();
+    
+    if (argc != 1) {
+        LOGE("Command %s requires exactly one argument\n", name);
+        return 1;
+    }
+
+    return install_zip(argv[0]);
+}
 
 /*
  * Function definitions
@@ -1114,6 +1212,21 @@ register_update_commands(RecoveryCommandContext *ctx)
     if (ret < 0) return ret;
 
     ret = registerCommand("done", CMD_ARGS_WORDS, cmd_done, (void *)ctx);
+    if (ret < 0) return ret;
+
+    ret = registerCommand("backup_rom", CMD_ARGS_WORDS, cmd_backup_rom, (void *)ctx);
+    if (ret < 0) return ret;
+
+    ret = registerCommand("restore_rom", CMD_ARGS_WORDS, cmd_restore_rom, (void *)ctx);
+    if (ret < 0) return ret;
+
+    ret = registerCommand("sleep", CMD_ARGS_WORDS, cmd_sleep, (void *)ctx);
+    if (ret < 0) return ret;
+
+    ret = registerCommand("print", CMD_ARGS_WORDS, cmd_print, (void *)ctx);
+    if (ret < 0) return ret;
+
+    ret = registerCommand("install_zip", CMD_ARGS_WORDS, cmd_install_zip, (void *)ctx);
     if (ret < 0) return ret;
 
     /*

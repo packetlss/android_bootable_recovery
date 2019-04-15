@@ -1,15 +1,18 @@
+ifneq ($(TARGET_SIMULATOR),true)
+ifeq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 commands_recovery_local_path := $(LOCAL_PATH)
-
-ifneq ($(TARGET_SIMULATOR),true)
-ifeq ($(TARGET_ARCH),arm)
+# LOCAL_CPP_EXTENSION := .c
 
 LOCAL_SRC_FILES := \
+    extendedcommands.c \
+	legacy.c \
+	commands.c \
 	recovery.c \
 	bootloader.c \
-	commands.c \
 	firmware.c \
 	install.c \
 	roots.c \
@@ -22,6 +25,9 @@ LOCAL_MODULE := recovery
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
 
+RECOVERY_API_VERSION := 1.6.3
+LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
+
 # This binary is in the recovery ramdisk, which is otherwise a copy of root.
 # It gets copied there in config/Makefile.  LOCAL_MODULE_TAGS suppresses
 # a (redundant) copy of the binary in /system/bin for user builds.
@@ -29,32 +35,30 @@ LOCAL_FORCE_STATIC_EXECUTABLE := true
 
 LOCAL_MODULE_TAGS := eng
 
-LOCAL_STATIC_LIBRARIES := libminzip libunz libamend libmtdutils libmincrypt
-LOCAL_STATIC_LIBRARIES += libminui libpixelflinger_static libcutils
+LOCAL_STATIC_LIBRARIES :=
+ifeq ($(TARGET_RECOVERY_UI_LIB),)
+  LOCAL_SRC_FILES += default_recovery_ui.c
+else
+  LOCAL_STATIC_LIBRARIES += $(TARGET_RECOVERY_UI_LIB)
+endif
+LOCAL_STATIC_LIBRARIES += libbusybox libclearsilverregex libmkyaffs2image libunyaffs libdump_image libflash_image libmtdutils
+LOCAL_STATIC_LIBRARIES += libamend
+LOCAL_STATIC_LIBRARIES += libminzip libunz libmtdutils libmincrypt
+LOCAL_STATIC_LIBRARIES += libminui libpixelflinger_static libpng libcutils
 LOCAL_STATIC_LIBRARIES += libstdc++ libc
-
-# Specify a C-includable file containing the OTA public keys.
-# This is built in config/Makefile.
-# *** THIS IS A TOTAL HACK; EXECUTABLES MUST NOT CHANGE BETWEEN DIFFERENT
-#     PRODUCTS/BUILD TYPES. ***
-# TODO: make recovery read the keys from an external file.
-RECOVERY_INSTALL_OTA_KEYS_INC := \
-	$(call intermediates-dir-for,PACKAGING,ota_keys_inc)/keys.inc
-# Let install.c say #include "keys.inc"
-LOCAL_C_INCLUDES += $(dir $(RECOVERY_INSTALL_OTA_KEYS_INC))
 
 include $(BUILD_EXECUTABLE)
 
-# Depend on the generated keys.inc containing the OTA public keys.
-$(intermediates)/install.o: $(RECOVERY_INSTALL_OTA_KEYS_INC)
-
+include $(commands_recovery_local_path)/amend/Android.mk
+include $(commands_recovery_local_path)/nandroid/Android.mk
 include $(commands_recovery_local_path)/minui/Android.mk
+include $(commands_recovery_local_path)/minzip/Android.mk
+include $(commands_recovery_local_path)/mtdutils/Android.mk
+include $(commands_recovery_local_path)/tools/Android.mk
+include $(commands_recovery_local_path)/edify/Android.mk
+include $(commands_recovery_local_path)/updater/Android.mk
+commands_recovery_local_path :=
 
 endif   # TARGET_ARCH == arm
 endif	# !TARGET_SIMULATOR
 
-include $(commands_recovery_local_path)/amend/Android.mk
-include $(commands_recovery_local_path)/minzip/Android.mk
-include $(commands_recovery_local_path)/mtdutils/Android.mk
-include $(commands_recovery_local_path)/tools/Android.mk
-commands_recovery_local_path :=

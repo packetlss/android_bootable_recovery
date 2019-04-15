@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-#ifndef _RECOVERY_VERIFIER_H
-#define _RECOVERY_VERIFIER_H
+#ifndef _UPDATER_UPDATER_H_
+#define _UPDATER_UPDATER_H_
 
-#include "mincrypt/rsa.h"
+#include <stdio.h>
+#include "minzip/Zip.h"
 
-/* Look in the file for a signature footer, and verify that it
- * matches one of the given keys.  Return one of the constants below.
- */
-int verify_file(const char* path, const RSAPublicKey *pKeys, unsigned int numKeys);
+typedef struct {
+    FILE* cmd_pipe;
+    ZipArchive* package_zip;
+} UpdaterInfo;
 
-#define VERIFY_SUCCESS        0
-#define VERIFY_FAILURE        1
-
-#endif  /* _RECOVERY_VERIFIER_H */
+#endif

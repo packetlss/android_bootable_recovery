@@ -47,7 +47,6 @@ void ui_end_menu();
 // Set the icon (normally the only thing visible besides the progress bar).
 enum {
   BACKGROUND_ICON_NONE,
-  BACKGROUND_ICON_UNPACKING,
   BACKGROUND_ICON_INSTALLING,
   BACKGROUND_ICON_ERROR,
   BACKGROUND_ICON_FIRMWARE_INSTALLING,
@@ -69,7 +68,7 @@ void ui_set_progress(float fraction);  // 0.0 - 1.0 within the defined scope
 
 // Default allocation of progress bar segments to operations
 static const int VERIFICATION_PROGRESS_TIME = 60;
-static const float VERIFICATION_PROGRESS_FRACTION = 0.5;
+static const float VERIFICATION_PROGRESS_FRACTION = 0.25;
 static const float DEFAULT_FILES_PROGRESS_FRACTION = 0.4;
 static const float DEFAULT_IMAGE_PROGRESS_FRACTION = 0.1;
 
@@ -90,5 +89,8 @@ void ui_reset_progress();
 #define LOGV(...) do {} while (0)
 #define LOGD(...) do {} while (0)
 #endif
+
+#define STRINGIFY(x) #x
+#define EXPAND(x) STRINGIFY(x)
 
 #endif  // RECOVERY_COMMON_H

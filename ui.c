@@ -27,9 +27,13 @@
 
 #include "common.h"
 #include "minui/minui.h"
+#include "recovery_ui.h"
 
 #define MAX_COLS 64
-#define MAX_ROWS 32
+#define MAX_ROWS 32 
+
+#define MENU_MAX_COLS 64
+#define MENU_MAX_ROWS 250
 
 #define CHAR_WIDTH 10
 #define CHAR_HEIGHT 18
@@ -46,7 +50,6 @@ static gr_surface gProgressBarEmpty[NUM_SIDES];
 static gr_surface gProgressBarFill[NUM_SIDES];
 
 static const struct { gr_surface* surface; const char *name; } BITMAPS[] = {
-    { &gBackgroundIcon[BACKGROUND_ICON_UNPACKING],  "icon_unpacking" },
     { &gBackgroundIcon[BACKGROUND_ICON_INSTALLING], "icon_installing" },
     { &gBackgroundIcon[BACKGROUND_ICON_ERROR],      "icon_error" },
     { &gBackgroundIcon[BACKGROUND_ICON_FIRMWARE_INSTALLING],
@@ -89,9 +92,10 @@ static int text_cols = 0, text_rows = 0;
 static int text_col = 0, text_row = 0, text_top = 0;
 static int show_text = 0;
 
-static char menu[MAX_ROWS][MAX_COLS];
+static char menu[MENU_MAX_ROWS][MENU_MAX_COLS];
 static int show_menu = 0;
 static int menu_top = 0, menu_items = 0, menu_sel = 0;
+static int menu_show_start = 0;             // this is line which menu display is starting at 
 
 // Key event input queue
 static pthread_mutex_t key_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -164,6 +168,10 @@ static void draw_text_line(int row, const char* t) {
   }
 }
 
+#define MENU_TEXT_COLOR 7, 133, 74, 255
+#define NORMAL_TEXT_COLOR 200, 200, 200, 255
+#define HEADER_TEXT_COLOR NORMAL_TEXT_COLOR
+
 // Redraw everything on the screen.  Does not flip pages.
 // Should only be called with gUpdateMutex locked.
 static void draw_screen_locked(void)
@@ -176,29 +184,43 @@ static void draw_screen_locked(void)
         gr_fill(0, 0, gr_fb_width(), gr_fb_height());
 
         int i = 0;
+        int j = 0;
+        int row = 0;            // current row that we are drawing on
         if (show_menu) {
-            gr_color(64, 96, 255, 255);
-            gr_fill(0, (menu_top+menu_sel) * CHAR_HEIGHT,
-                    gr_fb_width(), (menu_top+menu_sel+1)*CHAR_HEIGHT+1);
+            gr_color(MENU_TEXT_COLOR);
+            gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
+                    gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
 
-            for (; i < menu_top + menu_items; ++i) {
+            gr_color(HEADER_TEXT_COLOR);
+            for (i = 0; i < menu_top; ++i) {
+                draw_text_line(i, menu[i]);
+                row++;
+            }
+
+            if (menu_items - menu_show_start + menu_top >= MAX_ROWS)
+                j = MAX_ROWS - menu_top;
+            else
+                j = menu_items - menu_show_start;
+
+            gr_color(MENU_TEXT_COLOR);
+            for (i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
                 if (i == menu_top + menu_sel) {
                     gr_color(255, 255, 255, 255);
-                    draw_text_line(i, menu[i]);
-                    gr_color(64, 96, 255, 255);
+                    draw_text_line(i - menu_show_start , menu[i]);
+                    gr_color(MENU_TEXT_COLOR);
                 } else {
-                    draw_text_line(i, menu[i]);
+                    gr_color(MENU_TEXT_COLOR);
+                    draw_text_line(i - menu_show_start, menu[i]);
                 }
+                row++;
             }
-            gr_fill(0, i*CHAR_HEIGHT+CHAR_HEIGHT/2-1,
-                    gr_fb_width(), i*CHAR_HEIGHT+CHAR_HEIGHT/2+1);
-            ++i;
+            gr_fill(0, row*CHAR_HEIGHT+CHAR_HEIGHT/2-1,
+                    gr_fb_width(), row*CHAR_HEIGHT+CHAR_HEIGHT/2+1);
         }
 
-        gr_color(255, 255, 0, 255);
-
-        for (; i < text_rows; ++i) {
-            draw_text_line(i, text[(i+text_top) % text_rows]);
+        gr_color(NORMAL_TEXT_COLOR);
+        for (; row < text_rows; ++row) {
+            draw_text_line(row, text[(row+text_top) % text_rows]);
         }
     }
 }
@@ -308,20 +330,14 @@ static void *input_thread(void *cookie)
         }
         pthread_mutex_unlock(&key_queue_mutex);
 
-        // Alt+L or Home+End: toggle log display
-        int alt = key_pressed[KEY_LEFTALT] || key_pressed[KEY_RIGHTALT];
-        if ((alt && ev.code == KEY_L && ev.value > 0) ||
-            (key_pressed[KEY_HOME] && ev.code == KEY_END && ev.value > 0)) {
+        if (ev.value > 0 && device_toggle_display(key_pressed, ev.code)) {
             pthread_mutex_lock(&gUpdateMutex);
             show_text = !show_text;
             update_screen_locked();
             pthread_mutex_unlock(&gUpdateMutex);
         }
 
-        // Green+Menu+Red: reboot immediately
-        if (ev.code == KEY_DREAM_RED &&
-            key_pressed[KEY_DREAM_MENU] &&
-            key_pressed[KEY_DREAM_GREEN]) {
+        if (ev.value > 0 && device_reboot_now(key_pressed, ev.code)) {
             reboot(RB_AUTOBOOT);
         }
     }
@@ -345,7 +361,11 @@ void ui_init(void)
     for (i = 0; BITMAPS[i].name != NULL; ++i) {
         int result = res_create_surface(BITMAPS[i].name, BITMAPS[i].surface);
         if (result < 0) {
-            LOGE("Missing bitmap %s\n(Code %d)\n", BITMAPS[i].name, result);
+            if (result == -2) {
+                LOGI("Bitmap %s missing header\n", BITMAPS[i].name);
+            } else {
+                LOGE("Missing bitmap %s\n(Code %d)\n", BITMAPS[i].name, result);
+            }
             *BITMAPS[i].surface = NULL;
         }
     }
@@ -460,6 +480,9 @@ void ui_print(const char *fmt, ...)
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
+#define MENU_ITEM_HEADER " - "
+#define MENU_ITEM_HEADER_LENGTH strlen(MENU_ITEM_HEADER)
+
 void ui_start_menu(char** headers, char** items) {
     int i;
     pthread_mutex_lock(&gUpdateMutex);
@@ -470,14 +493,16 @@ void ui_start_menu(char** headers, char** items) {
             menu[i][text_cols-1] = '\0';
         }
         menu_top = i;
-        for (; i < text_rows; ++i) {
+        for (; i < MENU_MAX_ROWS; ++i) {
             if (items[i-menu_top] == NULL) break;
-            strncpy(menu[i], items[i-menu_top], text_cols-1);
+            strcpy(menu[i], MENU_ITEM_HEADER);
+            strncpy(menu[i] + MENU_ITEM_HEADER_LENGTH, items[i-menu_top], text_cols-1 - MENU_ITEM_HEADER_LENGTH);
             menu[i][text_cols-1] = '\0';
         }
+
         menu_items = i - menu_top;
         show_menu = 1;
-        menu_sel = 0;
+        menu_sel = menu_show_start = 0;
         update_screen_locked();
     }
     pthread_mutex_unlock(&gUpdateMutex);
@@ -489,9 +514,21 @@ int ui_menu_select(int sel) {
     if (show_menu > 0) {
         old_sel = menu_sel;
         menu_sel = sel;
+
         if (menu_sel < 0) menu_sel = 0;
         if (menu_sel >= menu_items) menu_sel = menu_items-1;
+
+
+        if (menu_sel < menu_show_start && menu_show_start > 0) {
+            menu_show_start--;
+        }
+
+        if (menu_sel - menu_show_start + menu_top >= text_rows) {
+            menu_show_start++;
+        }
+
         sel = menu_sel;
+
         if (menu_sel != old_sel) update_screen_locked();
     }
     pthread_mutex_unlock(&gUpdateMutex);
@@ -539,4 +576,8 @@ void ui_clear_key_queue() {
     pthread_mutex_lock(&key_queue_mutex);
     key_queue_len = 0;
     pthread_mutex_unlock(&key_queue_mutex);
+}
+
+void ui_set_show_text(int value) {
+    show_text = value;
 }
